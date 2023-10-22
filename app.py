@@ -581,7 +581,7 @@ def create_media():
             base64=data['base64']
         ))
         session.commit()
-        media_id = session.query(Media).filter(cast(Media.base64, String) == data['base64']).first().id
+        media_id = session.query(Media).filter(Media.base64 == data['base64']).first().id
         return {'message': 'Media created', 'id': media_id}, 201
     except KeyError:
         return {'message': 'Missing required fields'}, 400
