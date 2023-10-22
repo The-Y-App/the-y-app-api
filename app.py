@@ -5,7 +5,7 @@ import urllib
 
 load_dotenv()
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, desc, func
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, desc, func
 from sqlalchemy.orm import relationship, declarative_base, scoped_session, sessionmaker
 from sqlalchemy import create_engine
 
@@ -49,7 +49,7 @@ Base = declarative_base()
 class Media(Base):
     __tablename__ = 'media'
     id = Column(Integer, primary_key=True)
-    base64 = Column(String(4096))
+    base64 = Column(Text)
     author_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'))
     created_at = Column(DateTime, default=func.now())
 
@@ -581,7 +581,7 @@ def create_media():
             base64=data['base64']
         ))
         session.commit()
-        media_id = session.query(Media).filter(Media.base64 == data['base64']).first().id
+        media_id = session.query(Media).filter(cast(Media.base64, String) == data['base64']).first().id
         return {'message': 'Media created', 'id': media_id}, 201
     except KeyError:
         return {'message': 'Missing required fields'}, 400
