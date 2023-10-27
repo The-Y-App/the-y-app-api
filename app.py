@@ -172,9 +172,9 @@ def api_login():
             description: User not found
     """
     data = request.get_json()
-    email, password = data['username'], data['password']
+    username, password = data['username'], data['password']
     session = scoped_session(sessionFactory)
-    user = session.query(User).filter(User.email == email).first()
+    user = session.query(User).filter(User.username == username).first()
     if user is None:
         return {'message': 'User not found'}, 404
     if user.password != password:
