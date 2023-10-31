@@ -315,15 +315,17 @@ def create_user():
         400:
             description: Missing required fields
         416:
-            description: User already exists
+            description: Username or email already exists
     """
     data = request.get_json(force=True)
-    print(data)
     session = scoped_session(sessionFactory)
     try:
-        existing_user = session.query(User).filter(User.username == data['username']).first()
-        if existing_user is not None:
-            return {'message': 'User already exists'}, 416
+        existing_username = session.query(User).filter(User.username == data['username']).first()
+        if existing_username:
+            return {'message': 'Username already exists'}, 409
+        existing_email = session.query(User).filter(User.email == data['email']).first()
+        if existing_email:
+            return {'message': 'Email already exists'}, 416
         session.add(User(
             first_name=data['first_name'],
             last_name=data['last_name'],
