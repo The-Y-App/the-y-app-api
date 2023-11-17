@@ -59,10 +59,11 @@ class User(Base):
     media_id = Column(Integer, ForeignKey('media.id'), default=None, nullable=True)
     first_name = Column(String(64))
     last_name = Column(String(64))
+    username = Column(String(64), unique=True, nullable=False)
     dark_mode = Column(Boolean, default=False)
     profanity_filter = Column(Boolean, default=False)
     ui_scale = Column(String(16), default='Normal')
-    email = Column(String(128), unique=True)
+    email = Column(String(128), unique=True, nullable=False)
     password = Column(String(128))
     api_key = Column(String(256))
 
@@ -78,6 +79,9 @@ class Post(Base):
     author = relationship('User', backref='posts')
 
 # Base.metadata.create_all(sql)
+
+def gen_api_key():
+    return os.urandom(128).hex()
 
 @app.route('/', methods=['GET'])
 def index():
@@ -96,6 +100,21 @@ def api_status():
     """
     return {'message': 'API is online'}
 
+@app.route('/api/status/db', methods=['TRACE'])
+def api_status_db():
+    """
+    Endpoint to check the DB status.
+    ---
+    tags:
+      - Status
+    responses:
+        200:
+            description: DB is online
+    """
+    session = scoped_session(sessionFactory)
+    session.execute('SELECT 1')
+    return {'message': 'DB is online'}
+
 @app.route('/api/login', methods=['POST'])
 def api_login():
     """
@@ -108,12 +127,12 @@ def api_login():
             application/json:
                 schema:
                     required:
-                        - email
+                        - username
                         - password
                     properties:
-                        email:
+                        username:
                             type: string
-                            description: The user's email
+                            description: The user's username
                         password: 
                             type: string
                             description: The user's password
@@ -129,6 +148,9 @@ def api_login():
                     last_name:
                         type: string
                         description: The user's last name
+                    email:
+                        type: string
+                        description: The user's email
                     profile_picture:
                         type: string
                         description: The user's profile picture base64 string
@@ -150,25 +172,72 @@ def api_login():
             description: User not found
     """
     data = request.get_json()
-    email, password = data['email'], data['password']
+    username, password = data['username'], data['password']
     session = scoped_session(sessionFactory)
-    user = session.query(User).filter(User.email == email).first()
+    user = session.query(User).filter(User.username == username).first()
     if user is None:
         return {'message': 'User not found'}, 404
     if user.password != password:
         return {'message': 'Incorrect password'}, 401
-    user.api_key = os.urandom(128).hex()
+    user.api_key = gen_api_key()
     profile_picture = session.query(Media).filter(Media.id == user.media_id).first()
     session.commit()
     return {
         'first_name': user.first_name,
         'last_name': user.last_name,
+        'email': user.email,
         'dark_mode': user.dark_mode,
         'profanity_filter': user.profanity_filter,
         'ui_scale': user.ui_scale,
         'profile_picture': profile_picture.base64 if profile_picture is not None else None,
         'api_key': user.api_key
     }
+
+@app.route('/api/change_password', methods=['PATCH'])
+def api_change_password():
+    """
+    Endpoint to change a user's password.
+    ---
+    tags:
+      - Authentication
+    requestBody:
+        content:
+            application/json:
+                schema:
+                    required:
+                        - username
+                        - api_key
+                        - password
+                        - new_password
+                    properties:
+                        username:
+                            type: string
+                            description: The user's username
+                        api_key: 
+                            type: string
+                            description: The user's API key
+                        password: 
+                            type: string
+                            description: The user's current password
+                        new_password:
+                            type: string
+                            description: The user's new password
+    responses:
+        200:
+            description: Password changed
+        401:
+            description: User/API key not found
+    """
+    data = request.get_json()
+    username, api_key, password, new_password = data['username'], data['api_key'], data['password'], data['new_password']
+    session = scoped_session(sessionFactory)
+    user = session.query(User).filter(User.username == username).filter(User.api_key == api_key).filter(User.password == password).first()
+    if user is None:
+        return {'message': 'User/Password/API key not found'}, 401
+    user.password = new_password
+    session.commit()
+    api_key = gen_api_key()
+    return {'message': 'Password changed'}
 
 @app.route('/api/logout', methods=['POST'])
 def api_logout():
@@ -182,12 +251,12 @@ def api_logout():
             application/json:
                 schema:
                     required:
-                        - email
+                        - username
                         - api_key
                     properties:
-                        email:
+                        username:
                             type: string
-                            description: The user's email
+                            description: The user's username
                         api_key: 
                             type: string
                             description: The user's API key
@@ -195,19 +264,19 @@ def api_logout():
         200:
             description: User logged out
         401:
-            description: User API key not found
+            description: User/API key not found
     """
     data = request.get_json()
-    email, api_key = data['email'], data['api_key']
+    username, api_key = data['username'], data['api_key']
     session = scoped_session(sessionFactory)
-    user = session.query(User).filter(User.email == email).filter(User.api_key == api_key).first()
+    user = session.query(User).filter(User.username == username).filter(User.api_key == api_key).first()
     if user is None:
-        return {'message': 'User API key not found'}, 401
+        return {'message': 'User/API key not found'}, 401
     user.api_key = None
     session.commit()
     return {'message': 'User logged out'}
 
-@app.route('/api/user', methods=['POST'])
+@app.route('/api/user', methods=['PUT'])
 def create_user():
     """
     Endpoint to create a user
@@ -221,6 +290,7 @@ def create_user():
                     required:
                         - first_name
                         - last_name
+                        - username
                         - email
                         - password
                     properties:
@@ -230,6 +300,9 @@ def create_user():
                         last_name:
                             type: string
                             description: The user's last name
+                        username:
+                            type: string
+                            description: The user's username
                         email:
                             type: string
                             description: The user's email
@@ -242,19 +315,22 @@ def create_user():
         400:
             description: Missing required fields
         416:
-            description: User already exists
+            description: Username or email already exists
     """
     data = request.get_json(force=True)
-    print(data)
     session = scoped_session(sessionFactory)
     try:
-        existing_user = session.query(User).filter(User.email == data['email']).first()
-        if existing_user is not None:
-            return {'message': 'User already exists'}, 416
+        existing_username = session.query(User).filter(User.username == data['username']).first()
+        if existing_username:
+            return {'message': 'Username already exists'}, 409
+        existing_email = session.query(User).filter(User.email == data['email']).first()
+        if existing_email:
+            return {'message': 'Email already exists'}, 416
         session.add(User(
             first_name=data['first_name'],
             last_name=data['last_name'],
             email=data['email'],
+            username=data['username'],
             password=data['password']
         ))
         session.commit()
@@ -274,12 +350,12 @@ def update_user():
             application/json:
                 schema:
                     required:
-                        - email
+                        - username
                         - api_key
                     properties:
-                        email:
+                        username:
                             type: string
-                            description: The user's email
+                            description: The user's username
                         api_key: 
                             type: string
                             description: The user's API key
@@ -307,14 +383,14 @@ def update_user():
         400:
             description: Missing required fields
         401:
-            description: User API key not found
+            description: User/API key not found
     """
     data = request.get_json()
     session = scoped_session(sessionFactory)
     try:
-        user = session.query(User).filter(User.email == data['email']).filter(User.api_key == data['api_key']).first()
+        user = session.query(User).filter(User.username == data['username']).filter(User.api_key == data['api_key']).first()
         if user is None:
-            return {'message': 'User API key not found'}, 401
+            return {'message': 'User/API key not found'}, 401
         user.first_name = data['first_name'] if 'first_name' in data else user.first_name
         user.last_name = data['last_name'] if 'last_name' in data else user.last_name
         user.dark_mode = data['dark_mode'] if 'dark_mode' in data else user.dark_mode
@@ -345,6 +421,9 @@ def get_user():
                     last_name:
                         type: string
                         description: The user's last name
+                    username:
+                        type: string
+                        description: The user's username
                     email:
                         type: string
                         description: The user's email
@@ -369,6 +448,7 @@ def get_user():
     return [{
             'first_name': user.first_name,
             'last_name': user.last_name,
+            'username': user.username,
             'email': user.email,
             'dark_mode': user.dark_mode,
             'profanity_filter': user.profanity_filter,
@@ -402,6 +482,9 @@ def get_user_by_id(user_id):
                     last_name:
                         type: string
                         description: The user's last name
+                    username:
+                        type: string
+                        description: The user's username
                     profile_picture:
                         type: string
                         description: The user's profile picture base64 string
@@ -416,10 +499,11 @@ def get_user_by_id(user_id):
     return {
         'first_name': user.first_name,
         'last_name': user.last_name,
+        'username': user.username,
         'profile_picture': profile_picture.base64 if profile_picture is not None else None
     }
 
-@app.route('/api/post', methods=['POST'])
+@app.route('/api/post', methods=['PUT'])
 def create_post():
     """
     Endpoint to create a post
@@ -431,13 +515,13 @@ def create_post():
             application/json:
                 schema:
                     required:
-                        - email
+                        - username
                         - api_key
                         - content
                     properties:
-                        email:
+                        username:
                             type: string
-                            description: The user's email
+                            description: The user's username
                         api_key: 
                             type: string
                             description: The user's API key
@@ -453,14 +537,14 @@ def create_post():
         400:
             description: Missing required fields
         401:
-            description: User API key not found
+            description: User/API key not found
     """
     data = request.get_json()
     session = scoped_session(sessionFactory)
     try:
-        user = session.query(User).filter(User.email == data['email']).filter(User.api_key == data['api_key']).first()
+        user = session.query(User).filter(User.username == data['username']).filter(User.api_key == data['api_key']).first()
         if user is None:
-            return {'message': 'User API key not found'}, 401
+            return {'message': 'User/API key not found'}, 401
         session.add(Post(
             content=data['content'],
             author_id=user.id,
@@ -483,15 +567,25 @@ def get_posts():
         - application/json
     parameters:
         - in: query
-          name: email
+          name: username
           type: string
           required: true
-          description: The user's email
+          description: The user's username
         - in: query
           name: api_key
           type: string
           required: true
           description: The user's API key
+        - in: query
+          name: offset
+          type: integer
+          required: false
+          description: The number of posts to skip; defaults to 0
+        - in: query
+          name: limit
+          type: integer
+          required: false
+          description: The number of posts to return; defaults to 10; max 20
     responses:
         200:
             description: Post list
@@ -507,6 +601,9 @@ def get_posts():
                     last_name:
                         type: string
                         description: The user's last name
+                    username:
+                        type: string
+                        description: The user's username
                     profile_picture:
                         type: string
                         description: The user's profile picture base64 string
@@ -517,28 +614,31 @@ def get_posts():
                         type: string
                         description: The post last update date
         401:
-            description: User API key not found
+            description: User/API key not found
         500:
             description: Internal server error likely due to invalid sort order.
     """
     data = request.args
     session = scoped_session(sessionFactory)
-    user = session.query(User).filter(User.email == data['email']).filter(User.api_key == data['api_key']).first()
+    user = session.query(User).filter(User.username == data['username']).filter(User.api_key == data['api_key']).first()
     if user is None:
-        return {'message': 'User API key not found'}, 401
-    posts = session.query(Post).order_by(desc(Post.created_at)).all()
+        return {'message': 'User/API key not found'}, 401
+    offset = data['offset'] if 'offset' in data else 0
+    limit = min(data['limit'], 20) if 'limit' in data else 10
+    posts = session.query(Post).order_by(desc(Post.created_at)).offset(offset).limit(limit).all()
     print(posts[0].__str__() + ' ' + str(len(posts)))
     return [{
         'content': post.content,
         'first_name': post.author.first_name,
         'last_name': post.author.last_name,
+        'username': post.author.username,
         'profile_picture': session.query(Media).filter(Media.id == post.author.media_id).first().base64 if post.author.media_id is not None else None,
         'media': session.query(Media).filter(Media.id == post.Media_id).first().base64 if post.Media_id is not None else None,
         'created_at': post.created_at,
         'updated_at': post.updated_at
     } for post in posts]
     
-@app.route('/api/media', methods=['POST'])
+@app.route('/api/media', methods=['PUT'])
 def create_media():
     """
     Endpoint to create a media
@@ -550,13 +650,13 @@ def create_media():
             application/json:
                 schema:
                     required:
-                        - email
+                        - username
                         - api_key
                         - base64
                     properties:
-                        email:
+                        username:
                             type: string
-                            description: The user's email
+                            description: The user's username
                         api_key: 
                             type: string
                             description: The user's API key
@@ -569,18 +669,21 @@ def create_media():
         400:
             description: Missing required fields
         401:
-            description: User API key not found
+            description: User/API key not found
     """
     data = request.get_json()
     session = scoped_session(sessionFactory)
     try:
-        user = session.query(User).filter(User.email == data['email']).filter(User.api_key == data['api_key']).first()
+        user = session.query(User).filter(User.username == data['username']).filter(User.api_key == data['api_key']).first()
         if user is None:
-            return {'message': 'User API key not found'}, 401
-        session.add(Media(
-            base64=data['base64']
-        ))
-        session.commit()
+            return {'message': 'User/API key not found'}, 401
+        exists = session.query(Media).filter(cast(Media.base64, String) == data['base64']).first()
+        if not exists:
+            session.add(Media(
+                base64=data['base64'],
+                author_id=user.id
+            ))
+            session.commit()
         media_id = session.query(Media).filter(cast(Media.base64, String) == data['base64']).first().id
         return {'message': 'Media created', 'id': media_id}, 201
     except KeyError:
@@ -604,12 +707,12 @@ def delete_post(post_id):
             application/json:
                 schema:
                     required:
-                        - email
+                        - username
                         - api_key
                     properties:
-                        email:
+                        username:
                             type: string
-                            description: The user's email
+                            description: The user's username
                         api_key: 
                             type: string
                             description: The user's API key
@@ -617,15 +720,15 @@ def delete_post(post_id):
         200:
             description: Post deleted
         401:
-            description: User API key not found
+            description: User/API key not found
         404:
             description: Post not found
     """
     data = request.get_json()
     session = scoped_session(sessionFactory)
-    user = session.query(User).filter(User.email == data['email']).filter(User.api_key == data['api_key']).first()
+    user = session.query(User).filter(User.username == data['username']).filter(User.api_key == data['api_key']).first()
     if user is None:
-        return {'message': 'User API key not found'}, 401
+        return {'message': 'User/API key not found'}, 401
     post = session.query(Post).filter(Post.id == post_id).first()
     if post is None:
         return {'message': 'Post not found'}, 404
