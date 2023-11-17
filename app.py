@@ -5,7 +5,7 @@ import urllib
 
 load_dotenv()
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, cast, desc, func
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, cast, desc, func, literal_column
 from sqlalchemy.orm import relationship, declarative_base, scoped_session, sessionmaker
 from sqlalchemy import create_engine
 
@@ -59,11 +59,10 @@ class User(Base):
     media_id = Column(Integer, ForeignKey('media.id'), default=None, nullable=True)
     first_name = Column(String(64))
     last_name = Column(String(64))
-    username = Column(String(64), unique=True, nullable=False)
     dark_mode = Column(Boolean, default=False)
     profanity_filter = Column(Boolean, default=False)
     ui_scale = Column(String(16), default='Normal')
-    email = Column(String(128), unique=True, nullable=False)
+    email = Column(String(128), unique=True)
     password = Column(String(128))
     api_key = Column(String(256))
 
@@ -77,6 +76,12 @@ class Post(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     author = relationship('User', backref='posts')
+
+class Downvote(Base):
+    __tablename__ = 'downvotes'
+    post_id = Column(Integer, ForeignKey('posts.id', ondelete='CASCADE'), primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    created_at = Column(DateTime, default=func.now())
 
 # Base.metadata.create_all(sql)
 
@@ -586,6 +591,11 @@ def get_posts():
           type: integer
           required: false
           description: The number of posts to return; defaults to 10; max 20
+        - in: query
+          name: search
+          type: string
+          required: false
+          description: When provided, only posts or users containing the search string will be returned; case insensitive
     responses:
         200:
             description: Post list
@@ -607,6 +617,12 @@ def get_posts():
                     profile_picture:
                         type: string
                         description: The user's profile picture base64 string
+                    downvotes:
+                        type: integer
+                        description: The number of downvotes
+                    is_downvoted:
+                        type: boolean
+                        description: Whether the post is downvoted by the user
                     created_at:
                         type: string
                         description: The post creation date
@@ -623,20 +639,89 @@ def get_posts():
     user = session.query(User).filter(User.username == data['username']).filter(User.api_key == data['api_key']).first()
     if user is None:
         return {'message': 'User/API key not found'}, 401
-    offset = data['offset'] if 'offset' in data else 0
-    limit = min(data['limit'], 20) if 'limit' in data else 10
-    posts = session.query(Post).order_by(desc(Post.created_at)).offset(offset).limit(limit).all()
-    print(posts[0].__str__() + ' ' + str(len(posts)))
+    offset = int(data['offset']) if 'offset' in data else 0
+    limit = max(min(int(data['limit']), 20), 1) if 'limit' in data else 10
+    posts = session.query(
+            Post,
+            func.coalesce(
+                literal_column("TIMESTAMPADD(DAY, -COUNT(downvotes.user_id), posts.created_at)"),
+                Post.created_at
+            ).label('penalized_created_at')
+        ).outerjoin(Downvote, Downvote.post_id == Post.id).group_by(Post.id)
+    if 'search' in data:
+        posts = posts.filter(Post.content.ilike(f'%{data["search"]}%'))
+    posts = posts.order_by(desc('penalized_created_at')).offset(offset).limit(limit).all()
     return [{
-        'content': post.content,
-        'first_name': post.author.first_name,
-        'last_name': post.author.last_name,
-        'username': post.author.username,
-        'profile_picture': session.query(Media).filter(Media.id == post.author.media_id).first().base64 if post.author.media_id is not None else None,
-        'media': session.query(Media).filter(Media.id == post.Media_id).first().base64 if post.Media_id is not None else None,
-        'created_at': post.created_at,
-        'updated_at': post.updated_at
+        'content': post[0].content,
+        'first_name': post[0].author.first_name,
+        'last_name': post[0].author.last_name,
+        'username': post[0].author.username,
+        'profile_picture': session.query(Media).filter(Media.id == post[0].author.media_id).first().base64 if post[0].author.media_id is not None else None,
+        'media': session.query(Media).filter(Media.id == post[0].Media_id).first().base64 if post[0].Media_id is not None else None,
+        'downvotes': session.query(Downvote).filter(Downvote.post_id == post[0].id).count(),
+        'is_downvoted': session.query(Downvote).filter(Downvote.post_id == post[0].id).filter(Downvote.user_id == user.id).first() is not None,
+        'created_at': post[0].created_at,
+        'updated_at': post[0].updated_at
     } for post in posts]
+
+@app.route('/api/post/downvote/<int:post_id>', methods=['PUT', 'DELETE'])
+def create_downvote(post_id):
+    """
+    Endpoint to modify a post's downvote status
+    ---
+    tags:
+      - Post
+    parameters:
+        - in: path
+          name: post_id
+          type: integer
+          required: true
+          description: The post's ID
+    requestBody:
+        content:
+            application/json:
+                schema:
+                    required:
+                        - username
+                        - api_key
+                    properties:
+                        username:
+                            type: string
+                            description: The user's username
+                        api_key: 
+                            type: string
+                            description: The user's API key
+    responses:
+        200:
+            description: Downvote deleted
+        201:
+            description: Downvote created
+        401:
+            description: User/API key not found
+        404:
+            description: Post not found
+    """
+    data = request.get_json()
+    session = scoped_session(sessionFactory)
+    user = session.query(User).filter(User.username == data['username']).filter(User.api_key == data['api_key']).first()
+    if user is None:
+        return {'message': 'User/API key not found'}, 401
+    post = session.query(Post).filter(Post.id == post_id).first()
+    if post is None:
+        return {'message': 'Post not found'}, 404
+    exists = session.query(Downvote).filter(Downvote.post_id == post_id).filter(Downvote.user_id == user.id).first()
+    if request.method == 'PUT':
+        if exists is not None:
+            session.add(Downvote(
+                post_id=post_id,
+                user_id=user.id
+            ))
+            session.commit()
+        return {'message': 'Downvote created'}, 201
+    elif exists is not None and request.method == 'DELETE':
+        session.delete(exists)
+        session.commit()
+        return {'message': 'Downvote deleted'}, 200
     
 @app.route('/api/media', methods=['PUT'])
 def create_media():
@@ -735,3 +820,10 @@ def delete_post(post_id):
     session.delete(post)
     session.commit()
     return {'message': 'Post deleted'}
+
+
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0')
+    # app.run(ssl_context=('cert.pem', 'key.pem'), host='0.0.0.0')
