@@ -605,7 +605,7 @@ def get_posts():
                 properties:
                     post_id:
                         type: integer
--                       description: The post's id
+                        description: The post's id
                     content:
                         type: string
                         description: The post content
