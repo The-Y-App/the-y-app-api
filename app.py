@@ -59,6 +59,7 @@ class User(Base):
     media_id = Column(Integer, ForeignKey('media.id'), default=None, nullable=True)
     first_name = Column(String(64))
     last_name = Column(String(64))
+    username = Column(String(64), unique=True, nullable=False)
     dark_mode = Column(Boolean, default=False)
     profanity_filter = Column(Boolean, default=False)
     ui_scale = Column(String(16), default='Normal')
