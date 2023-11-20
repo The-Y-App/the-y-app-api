@@ -603,6 +603,9 @@ def get_posts():
             schema:
                 id: FullPost
                 properties:
+                    post_id:
+                        type: integer
+-                       description: The post's id
                     content:
                         type: string
                         description: The post content
@@ -653,6 +656,7 @@ def get_posts():
         posts = posts.filter(Post.content.ilike(f'%{data["search"]}%'))
     posts = posts.order_by(desc('penalized_created_at')).offset(offset).limit(limit).all()
     return [{
+        'post_id': post[0].id,
         'content': post[0].content,
         'first_name': post[0].author.first_name,
         'last_name': post[0].author.last_name,
