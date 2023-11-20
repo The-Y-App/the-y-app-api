@@ -712,7 +712,7 @@ def create_downvote(post_id):
         return {'message': 'Post not found'}, 404
     exists = session.query(Downvote).filter(Downvote.post_id == post_id).filter(Downvote.user_id == user.id).first()
     if request.method == 'PUT':
-        if exists is not None:
+        if exists is None:
             session.add(Downvote(
                 post_id=post_id,
                 user_id=user.id
