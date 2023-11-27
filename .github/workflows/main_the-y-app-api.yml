@@ -20,7 +20,7 @@ jobs:
       - name: Set up Python version
         uses: actions/setup-python@v1
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Create and start virtual environment
         run: |
@@ -64,4 +64,4 @@ jobs:
         with:
           app-name: 'the-y-app-api'
           slot-name: 'Production'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_1441AA5359D74DABA9EACF76B00F9D77 }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_C9C5F78CB05E47CDA74FC4EDF79915AD }}
