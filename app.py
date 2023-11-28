@@ -46,6 +46,7 @@ swagger = Swagger(app, template={
 
 Base = declarative_base()
 
+
 class Media(Base):
     __tablename__ = 'media'
     id = Column(Integer, primary_key=True)
@@ -83,6 +84,11 @@ class Downvote(Base):
     post_id = Column(Integer, ForeignKey('posts.id', ondelete='CASCADE'), primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
     created_at = Column(DateTime, default=func.now())
+
+class Bad_Words(Base):
+    __tablename__ = 'bad_words'
+    id = Column(Integer, primary_key=True)
+    word = Column(String(128))
 
 # Base.metadata.create_all(sql)
 
@@ -593,6 +599,11 @@ def get_posts():
           required: false
           description: The number of posts to return; defaults to 10; max 20
         - in: query
+          name: dislikes_only
+          type: boolean
+          required: false
+          description: When provided, only posts that the user has downvoted will be returned.
+        - in: query
           name: search
           type: string
           required: false
@@ -643,6 +654,7 @@ def get_posts():
     user = session.query(User).filter(User.username == data['username']).filter(User.api_key == data['api_key']).first()
     if user is None:
         return {'message': 'User/API key not found'}, 401
+    profanity_filter = user.profanity_filter
     offset = int(data['offset']) if 'offset' in data else 0
     limit = max(min(int(data['limit']), 20), 1) if 'limit' in data else 10
     posts = session.query(
@@ -654,10 +666,15 @@ def get_posts():
         ).outerjoin(Downvote, Downvote.post_id == Post.id).group_by(Post.id)
     if 'search' in data:
         posts = posts.filter(Post.content.ilike(f'%{data["search"]}%'))
+    if 'dislikes_only' in data:
+        posts = posts.filter(Downvote.user_id == user.id)
     posts = posts.order_by(desc('penalized_created_at')).offset(offset).limit(limit).all()
+    bad_word_list = []
+    if profanity_filter:
+        bad_word_list = [bad.word for bad in session.query(Bad_Words).all()]
     return [{
         'post_id': post[0].id,
-        'content': post[0].content,
+        'content': post[0].content if not profanity_filter else ' '.join(['***' if word.lower() in bad_word_list else word for word in post[0].content.split(' ')]),
         'first_name': post[0].author.first_name,
         'last_name': post[0].author.last_name,
         'username': post[0].author.username,
