@@ -10,7 +10,8 @@ from sqlalchemy.orm import relationship, declarative_base, scoped_session, sessi
 from sqlalchemy import create_engine
 
 sql = create_engine('mssql+pyodbc:///?autocommit=true&odbc_connect={}'.format(urllib.parse.quote_plus(f"""Driver={"{ODBC Driver 17 for SQL Server}"};Server=tcp:{os.environ.get('DB_SERVER')},1433;Database={os.environ.get('DB_NAME')};
-Uid={os.environ.get('DB_UN')};Pwd={os.environ.get('DB_PW')};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=20;""")))
+Uid={os.environ.get('DB_UN')};Pwd={os.environ.get('DB_PW')};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=20;""")), connect_args={'ssl': {'ca': 'DigiCertGlobalRootCA.crt.pem'}})
+
 sessionFactory = scoped_session(sessionmaker(bind=sql))
 
 from flask import Flask, redirect, request
@@ -45,7 +46,6 @@ swagger = Swagger(app, template={
 })
 
 Base = declarative_base()
-
 
 class Media(Base):
     __tablename__ = 'media'
