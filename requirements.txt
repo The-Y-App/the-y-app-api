@@ -2,5 +2,6 @@ python-dotenv
 Flask==3.0.0
 sqlalchemy==2.0.21
 pyodbc
+pymysql
 flasgger==0.9.7.1
 gunicorn
