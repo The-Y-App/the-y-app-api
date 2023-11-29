@@ -9,7 +9,7 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, T
 from sqlalchemy.orm import relationship, declarative_base, scoped_session, sessionmaker
 from sqlalchemy import create_engine
 
-sql = create_engine(f'mysql+pymysql://{os.environ.get('DB_UN')}:{os.environ.get('DB_PW')}@{os.environ.get('DB_SERVER')}/{os.environ.get('DB_NAME')}', connect_args={'ssl': {'ca': 'DigiCertGlobalRootCA.crt.pem'}})
+sql = create_engine(f"mysql+pymysql://{os.environ.get('DB_UN')}:{os.environ.get('DB_PW')}@{os.environ.get('DB_SERVER')}/{os.environ.get('DB_NAME')}", connect_args={'ssl': {'ca': 'DigiCertGlobalRootCA.crt.pem'}})
 
 sessionFactory = scoped_session(sessionmaker(bind=sql))
 
