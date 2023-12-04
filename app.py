@@ -94,6 +94,23 @@ class Bad_Words(Base):
 def gen_api_key():
     return os.urandom(128).hex()
 
+def recreates_engine():
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            global sql, sessionFactory
+
+            if sql:
+                sql.dispose()
+
+            sql = create_engine(f"mysql+pymysql://{os.environ.get('DB_UN')}:{os.environ.get('DB_PW')}@{os.environ.get('DB_SERVER')}/{os.environ.get('DB_NAME')}", connect_args={'ssl': {'ca': 'DigiCertGlobalRootCA.crt.pem'}}, echo=True)
+            sessionFactory = scoped_session(sessionmaker(bind=sql))
+
+            return func(*args, **kwargs)
+
+        return wrapper
+    return decorator
+
 @app.route('/', methods=['GET'])
 def index():
     return redirect('/apidocs/')
@@ -112,6 +129,7 @@ def api_status():
     return {'message': 'API is online'}
 
 @app.route('/api/status/db', methods=['TRACE'])
+@recreates_engine()
 def api_status_db():
     """
     Endpoint to check the DB status.
@@ -128,6 +146,7 @@ def api_status_db():
     return {'message': 'DB is online'}
 
 @app.route('/api/login', methods=['POST'])
+@recreates_engine()
 def api_login():
     """
     Endpoint to login.
@@ -207,6 +226,7 @@ def api_login():
     }
 
 @app.route('/api/change_password', methods=['PATCH'])
+@recreates_engine()
 def api_change_password():
     """
     Endpoint to change a user's password.
@@ -254,6 +274,7 @@ def api_change_password():
     return {'message': 'Password changed'}
 
 @app.route('/api/logout', methods=['POST'])
+@recreates_engine()
 def api_logout():
     """
     Endpoint to logout.
@@ -292,6 +313,7 @@ def api_logout():
     return {'message': 'User logged out'}
 
 @app.route('/api/user', methods=['PUT'])
+@recreates_engine()
 def create_user():
     """
     Endpoint to create a user
@@ -355,6 +377,7 @@ def create_user():
     return {'message': 'User created'}, 201
 
 @app.route('/api/user', methods=['PATCH'])
+@recreates_engine()
 def update_user():
     """
     Endpoint to update a user
@@ -420,6 +443,7 @@ def update_user():
     return {'message': 'User updated'}, 200
 
 @app.route('/api/user', methods=['GET'])
+@recreates_engine()
 def get_user():
     """
     Endpoint to get the users list. For Debugging!
@@ -477,6 +501,7 @@ def get_user():
     return ret
 
 @app.route('/api/user/<int:user_id>', methods=['GET'])
+@recreates_engine()
 def get_user_by_id(user_id):
     """
     Endpoint to get simple info about a user by ID
@@ -525,6 +550,7 @@ def get_user_by_id(user_id):
     return ret
 
 @app.route('/api/post', methods=['PUT'])
+@recreates_engine()
 def create_post():
     """
     Endpoint to create a post
@@ -579,6 +605,7 @@ def create_post():
         return {'message': 'Missing required fields'}, 400
     
 @app.route('/api/post', methods=['GET'])
+@recreates_engine()
 def get_posts():
     """
     Endpoint to get the posts list.
@@ -699,6 +726,7 @@ def get_posts():
     return ret
 
 @app.route('/api/post/downvote/<int:post_id>', methods=['PUT', 'DELETE'])
+@recreates_engine()
 def create_downvote(post_id):
     """
     Endpoint to modify a post's downvote status
@@ -760,6 +788,7 @@ def create_downvote(post_id):
         return {'message': 'Downvote deleted'}, 200
     
 @app.route('/api/media', methods=['PUT'])
+@recreates_engine()
 def create_media():
     """
     Endpoint to create a media
@@ -812,6 +841,7 @@ def create_media():
         return {'message': 'Missing required fields'}, 400
 
 @app.route('/api/post/<int:post_id>', methods=['DELETE'])
+@recreates_engine()
 def delete_post(post_id):
     """
     Endpoint to delete a post
