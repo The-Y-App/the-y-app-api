@@ -124,6 +124,7 @@ def api_status_db():
     """
     session = scoped_session(sessionFactory)
     session.execute('SELECT 1')
+    session.close()
     return {'message': 'DB is online'}
 
 @app.route('/api/login', methods=['POST'])
@@ -193,6 +194,7 @@ def api_login():
     user.api_key = gen_api_key()
     profile_picture = session.query(Media).filter(Media.id == user.media_id).first()
     session.commit()
+    session.close()
     return {
         'first_name': user.first_name,
         'last_name': user.last_name,
@@ -246,8 +248,9 @@ def api_change_password():
     if user is None:
         return {'message': 'User/Password/API key not found'}, 401
     user.password = new_password
+    user.api_key = gen_api_key()
     session.commit()
-    api_key = gen_api_key()
+    session.close()
     return {'message': 'Password changed'}
 
 @app.route('/api/logout', methods=['POST'])
@@ -285,6 +288,7 @@ def api_logout():
         return {'message': 'User/API key not found'}, 401
     user.api_key = None
     session.commit()
+    session.close()
     return {'message': 'User logged out'}
 
 @app.route('/api/user', methods=['PUT'])
@@ -345,6 +349,7 @@ def create_user():
             password=data['password']
         ))
         session.commit()
+        session.close()
     except KeyError:
         return {'message': 'Missing required fields'}, 400
     return {'message': 'User created'}, 201
@@ -409,6 +414,7 @@ def update_user():
         user.ui_scale = data['ui_scale'] if 'ui_scale' in data else user.ui_scale
         user.media_id = data['profile_picture_media_id'] if 'profile_picture_media_id' in data else user.media_id
         session.commit()
+        session.close()
     except KeyError:
         return {'message': 'Missing required fields'}, 400
     return {'message': 'User updated'}, 200
@@ -456,7 +462,7 @@ def get_user():
     """
     session = scoped_session(sessionFactory)
     users = session.query(User).all()
-    return [{
+    ret = [{
             'first_name': user.first_name,
             'last_name': user.last_name,
             'username': user.username,
@@ -467,6 +473,8 @@ def get_user():
             'password': user.password,
             'api_key': user.api_key
         } for user in users]
+    session.close()
+    return ret
 
 @app.route('/api/user/<int:user_id>', methods=['GET'])
 def get_user_by_id(user_id):
@@ -507,12 +515,14 @@ def get_user_by_id(user_id):
     if user is None:
         return {'message': 'User not found'}, 404
     profile_picture = session.query(Media).filter(Media.id == user.media_id).first()
-    return {
+    ret = {
         'first_name': user.first_name,
         'last_name': user.last_name,
         'username': user.username,
         'profile_picture': profile_picture.base64 if profile_picture is not None else None
     }
+    session.close()
+    return ret
 
 @app.route('/api/post', methods=['PUT'])
 def create_post():
@@ -563,6 +573,7 @@ def create_post():
         ))
         session.commit()
         post_id = session.query(Post).filter(Post.content == data['content']).first().id
+        session.close()
         return {'message': 'Post created', 'id': post_id}, 201
     except KeyError:
         return {'message': 'Missing required fields'}, 400
@@ -671,7 +682,7 @@ def get_posts():
     bad_word_list = []
     if profanity_filter:
         bad_word_list = [bad.word for bad in session.query(Bad_Words).all()]
-    return [{
+    ret = [{
         'post_id': post[0].id,
         'content': post[0].content if not profanity_filter else ' '.join(['***' if word.lower() in bad_word_list else word for word in post[0].content.split(' ')]),
         'first_name': post[0].author.first_name,
@@ -684,6 +695,8 @@ def get_posts():
         'created_at': post[0].created_at,
         'updated_at': post[0].updated_at
     } for post in posts]
+    session.close()
+    return ret
 
 @app.route('/api/post/downvote/<int:post_id>', methods=['PUT', 'DELETE'])
 def create_downvote(post_id):
@@ -738,10 +751,12 @@ def create_downvote(post_id):
                 user_id=user.id
             ))
             session.commit()
+            session.close()
         return {'message': 'Downvote created'}, 201
     elif exists is not None and request.method == 'DELETE':
         session.delete(exists)
         session.commit()
+        session.close()
         return {'message': 'Downvote deleted'}, 200
     
 @app.route('/api/media', methods=['PUT'])
@@ -791,6 +806,7 @@ def create_media():
             ))
             session.commit()
         media_id = session.query(Media).filter(cast(Media.base64, String) == data['base64']).first().id
+        session.close()
         return {'message': 'Media created', 'id': media_id}, 201
     except KeyError:
         return {'message': 'Missing required fields'}, 400
@@ -840,6 +856,7 @@ def delete_post(post_id):
         return {'message': 'Post not found'}, 404
     session.delete(post)
     session.commit()
+    session.close()
     return {'message': 'Post deleted'}
 
 
