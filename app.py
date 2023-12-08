@@ -214,8 +214,7 @@ def api_login():
     user.api_key = gen_api_key()
     profile_picture = session.query(Media).filter(Media.id == user.media_id).first()
     session.commit()
-    session.close()
-    return {
+    ret = {
         'first_name': user.first_name,
         'last_name': user.last_name,
         'email': user.email,
@@ -225,6 +224,8 @@ def api_login():
         'profile_picture': profile_picture.base64 if profile_picture is not None else None,
         'api_key': user.api_key
     }
+    session.close()
+    return ret
 
 @app.route('/api/change_password', methods=['PATCH'])
 @recreates_engine()
